@@ -4,7 +4,7 @@ from typing import Optional
 import requests
 from sqlalchemy.orm import sessionmaker
 
-from faf_replay_scrape.src.replay_db import get_engine, ReplayDownload
+from src.replay_db import get_engine, ReplayDownload
 
 REPLAY_URL_BASE = "https://replay.faforever.com/"
 
@@ -37,8 +37,9 @@ def download_replays(from_id: int, to_id: int, refresh: bool = False):
             session.commit()
             logging.info(f"Done!")
         else:
-            logging.info(f"Skipping")
+            logging.info(f"Skipping, as it exists ({replay})")
 
 
 if __name__ == '__main__':
-    download_replays(21708980, 21709000)
+    logging.basicConfig(encoding='utf-8', level=logging.DEBUG)
+    download_replays(21708995, 21709000)

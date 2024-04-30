@@ -1,14 +1,4 @@
-import json
-from io import FileIO
-
 from fafreplay import extract_scfa
-from replay_parser.body import ReplayBody
-from replay_parser.constants import CommandStates
-from replay_parser.header import ReplayHeader
-from replay_parser.reader import ReplayReader
-
-from replay_parser.replay import continuous_parse, parse
-
 from datetime import timedelta
 from fafreplay import Parser, commands
 

@@ -1,0 +1,4 @@
+faf-replay-parser
+sqlalchemy
+requests
+zstandard

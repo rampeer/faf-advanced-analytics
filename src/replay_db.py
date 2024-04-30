@@ -1,11 +1,11 @@
 import datetime
 from enum import Enum
-from typing import TypeVar, Any
+from typing import TypeVar, Any, Optional
 from uuid import uuid4
 
 import sqlalchemy
-from sqlalchemy import JSON, TIMESTAMP, create_engine, func, BLOB, Integer
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, Session
+from sqlalchemy import JSON, TIMESTAMP, create_engine, func, BLOB, Integer, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, Session, relationship
 
 _engine = None
 
@@ -15,10 +15,10 @@ class Timestamp(int):
 
 
 class Factions(Enum):
-    UEF = 0
-    Cybran = 1
-    Aeon = 2
-    Seraphim = 3
+    UEF = 1
+    Cybran = 2
+    Aeon = 3
+    Seraphim = 4
 
 
 class Base(DeclarativeBase):
@@ -45,35 +45,42 @@ class Base(DeclarativeBase):
         return serialized
 
 
-class ReplayDownload(Base):
-    __tablename__ = "entries"
+class Account(Base):
+    __tablename__ = "account"
+    account_id: Mapped[str] = mapped_column(primary_key=True)
+    player_replays = relationship("PlayerReplay", back_populates="account")
+
+
+class Replay(Base):
+    __tablename__ = "replay"
     replay_id: Mapped[str] = mapped_column(primary_key=True)
     created_at: Mapped[Timestamp] = mapped_column(default=lambda: datetime.datetime.now())
-    data: Mapped[bytes]
+    players = relationship("PlayerReplay", back_populates="replay")
 
 
-class Players(Base):
-    __tablename__ = "players"
-    nickname: Mapped[str] = mapped_column(primary_key=True)
+class PlayerReplay(Base):
+    __tablename__ = "player_replay"
+    replay_id: Mapped[str] = mapped_column(ForeignKey('replay.replay_id'), primary_key=True)
+    replay = relationship("Replay")
 
+    account_id: Mapped[str] = mapped_column(ForeignKey('account.account_id'), primary_key=True)
+    account = relationship("Account")
 
-class PlayerInReplay(Base):
-    __tablename__ = "player_in_replay"
-    replay: Mapped[str] = mapped_column(primary_key=True)
+    nickname: Mapped[str] = mapped_column()
 
-    nickname: Mapped[str] = mapped_column(primary_key=True)
-    country: Mapped[str]
+    country: Mapped[Optional[str]] = mapped_column(default=None, nullable=True)
+    clan: Mapped[str] = mapped_column(default=None, nullable=True)
 
     rating_mean: Mapped[float]
     rating_stddev: Mapped[float]
     rating: Mapped[float]
 
     team: Mapped[int]
-    faction: Mapped[Factions]
+    faction: Mapped[int]
 
 
-class ReplayMetadata(Base):
-    __tablename__ = "replay_metadata"
+class ReplayDownload(Base):
+    __tablename__ = "replay_download"
     replay_id: Mapped[str] = mapped_column(primary_key=True)
     created_at: Mapped[Timestamp] = mapped_column(default=lambda: datetime.datetime.now())
     data: Mapped[bytes]
