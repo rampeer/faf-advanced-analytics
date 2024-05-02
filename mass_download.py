@@ -3,43 +3,45 @@ from typing import Optional
 
 import requests
 from sqlalchemy.orm import sessionmaker
+import argparse
 
 from src.replay_db import get_engine, ReplayDownload
+from src.storage import list_replays, write_replay, has_replay, ensure_replay_dir
 
 REPLAY_URL_BASE = "https://replay.faforever.com/"
 
 
-def load_replay(url: str):
+def _load_replay(url: str):
     response = requests.get(url)
-    return response.content
+    if response.status_code == 200:
+        return response.content
+    return None
 
 
 def download_replays(from_id: int, to_id: int, refresh: bool = False):
-    engine = get_engine()
-    session = sessionmaker(engine)()
+    ensure_replay_dir()
     for replay_id in range(from_id, to_id + 1):
         logging.info(f"Checking replay {replay_id}...")
-        replay: Optional[ReplayDownload] = (
-            session
-            .query(ReplayDownload)
-            .filter(ReplayDownload.replay_id == replay_id)
-            .first()
-        )
-        if refresh and replay:
-            logging.info(f"Refreshing replay {replay_id}")
-            session.delete(replay)
-            session.commit()
-        if replay is None:
-            url = REPLAY_URL_BASE + str(replay_id)
-            data = load_replay(url)
-            replay = ReplayDownload(replay_id=str(replay_id), data=data)
-            session.add(replay)
-            session.commit()
+        if has_replay(str(replay_id)):
+            if refresh:
+                logging.info(f"Refreshing replay {replay_id}")
+            else:
+                logging.info(f"Skipping replay {replay_id}")
+                continue
+        url = REPLAY_URL_BASE + str(replay_id)
+        data = _load_replay(url)
+        if data:
+            write_replay(str(replay_id), data)
             logging.info(f"Done!")
         else:
-            logging.info(f"Skipping, as it exists ({replay})")
+            logging.info(f"Replay not found, skipping!")
 
 
-if __name__ == '__main__':
-    logging.basicConfig(encoding='utf-8', level=logging.DEBUG)
-    download_replays(21708995, 21709000)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Download replays from Faforever")
+    parser.add_argument("--from_id", type=int, help="Starting Replay ID", default=21_700_000)
+    parser.add_argument("--to_id", type=int, help="Ending Replay ID (inclusive)", default=21_708_086)
+    parser.add_argument("--refresh", action="store_true", help="Refresh existing replays?", default=False)
+    args = parser.parse_args()
+    logging.basicConfig(encoding='utf-8', level=logging.INFO)
+    download_replays(args.from_id, args.to_id)
