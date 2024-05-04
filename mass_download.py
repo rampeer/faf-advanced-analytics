@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 import argparse
 
 from src.replay_db import get_engine, ReplayDownload
-from src.storage import list_replays, write_replay, has_replay, ensure_replay_dir
+from src.storage import list_replays, write_replay, has_replay, ensure_dirs
 
 REPLAY_URL_BASE = "https://replay.faforever.com/"
 
@@ -19,22 +19,22 @@ def _load_replay(url: str):
 
 
 def download_replays(from_id: int, to_id: int, refresh: bool = False):
-    ensure_replay_dir()
+    ensure_dirs()
     for replay_id in range(from_id, to_id + 1):
         logging.info(f"Checking replay {replay_id}...")
         if has_replay(str(replay_id)):
             if refresh:
-                logging.info(f"Refreshing replay {replay_id}")
+                logging.info(f"\trefreshing replay {replay_id}")
             else:
-                logging.info(f"Skipping replay {replay_id}")
+                logging.info(f"\talready downloaded replay {replay_id}")
                 continue
         url = REPLAY_URL_BASE + str(replay_id)
         data = _load_replay(url)
         if data:
             write_replay(str(replay_id), data)
-            logging.info(f"Done!")
+            logging.info(f"\tdone!")
         else:
-            logging.info(f"Replay not found, skipping!")
+            logging.info(f"\treplay not found!")
 
 
 if __name__ == "__main__":
