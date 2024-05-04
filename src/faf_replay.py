@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from fafreplay import extract_scfa
 from datetime import timedelta
 from fafreplay import Parser, commands
@@ -26,6 +28,7 @@ class MessageTypes:
 def _replay_body_parser(replay):
     current_tick = 0
     current_time = timedelta()
+    chat_messages, notifications = [], []
     for cmd in replay["body"]["commands"]:
         if cmd["name"] == "LuaSimCallback" and cmd.get("func") == "GiveResourcesToPlayer":
             args = cmd.get("args", {})
@@ -37,8 +40,11 @@ def _replay_body_parser(replay):
             target_player = args.get("To")
             if is_chat:
                 if message_type == MessageTypes.auto_notify:
-                    pass
+                    continue
                     # print(current_time, player, message)
+                else:
+                    pass
+                    # chat_messages.append()
                 # print("Chat message")
                 # print(current_time, player, mass, energy, message, message_type, target_player)
             else:
@@ -52,10 +58,19 @@ def _replay_body_parser(replay):
         if cmd["name"] == "Advance":
             current_tick += cmd["ticks"]
             current_time = timedelta(milliseconds=current_tick * 100)
-    print("Game time:", timedelta(milliseconds=replay["body"]["sim"]["tick"] * 100))
+    return chat_messages, notifications, current_time.seconds
 
 
-def read_replay(data_stream, compressed: bool = True):
+@dataclass
+class ParsedReplayData:
+    header: dict
+    chat_messages: list
+    notifications: list
+    duration: float
+    desync: bool
+
+
+def parse_replay(data_stream, compressed: bool = True):
     parser = Parser(
         commands=all_commands,
         save_commands=True,
@@ -64,31 +79,25 @@ def read_replay(data_stream, compressed: bool = True):
     )
 
     if compressed:
-        data = extract_scfa(data_stream)
+        data, file_header = extract_scfa(data_stream, return_file_header=True)
     else:
-        data = data_stream.read()
+        raise Exception("Unsupported compression format")
 
     replay = parser.parse(data)
-    if replay["body"]["sim"]["desync_ticks"]:
-        print("Replay desynced!")
-    return replay["header"], _replay_body_parser(replay)
-
-
-# def read_replay2(filename: str):
-#     with open(filename, "rb") as f:
-#         decoded_data = extract_scfa(f)
-#     reader = ReplayReader(decoded_data)
-#     header = ReplayHeader(reader)
-#     print(header)
-#     for tick, cmd_type, data in ReplayBody(reader).continuous_parse():
-#         print(tick, cmd_type, data)
-#         if cmd_type == CommandStates.DestroyEntity:
-#             print(data)
+    desync = bool(replay["body"]["sim"]["desync_ticks"])
+    chat_messages, notifications, duration = _replay_body_parser(replay)
+    return ParsedReplayData(
+        header=replay["header"] | file_header,
+        chat_messages=chat_messages,
+        notifications=notifications,
+        duration=duration,
+        desync=desync
+    )
 
 
 if __name__ == "__main__":
     f1 = "22233410.fafreplay"
-    f2 = "22235042.fafreplay"
-    with open(f"C:/Users/gluko/Downloads/{f2}", "rb") as f:
-        metadata, msgs = read_replay(f)
+    f2 = "21708010.fafreplay"
+    with open(f"data/replays/{f2}", "rb") as f:
+        metadata, msgs = parse_replay(f)
     print(metadata)
