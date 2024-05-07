@@ -1,5 +1,5 @@
 import datetime
-from enum import Enum
+from enum import IntEnum
 from typing import TypeVar, Any, Optional
 from uuid import uuid4
 
@@ -14,7 +14,7 @@ class Timestamp(int):
     ...
 
 
-class Factions(Enum):
+class Factions(IntEnum):
     UEF = 1
     Cybran = 2
     Aeon = 3
@@ -43,40 +43,6 @@ class Base(DeclarativeBase):
             serialized[field] = related.as_dict() if related else None
 
         return serialized
-
-
-class Account(Base):
-    __tablename__ = "account"
-    account_id: Mapped[str] = mapped_column(primary_key=True)
-    player_replays = relationship("PlayerReplay", back_populates="account")
-
-
-class Replay(Base):
-    __tablename__ = "replay"
-    replay_id: Mapped[str] = mapped_column(primary_key=True)
-    created_at: Mapped[Timestamp] = mapped_column(default=lambda: datetime.datetime.now())
-    players = relationship("PlayerReplay", back_populates="replay")
-
-
-class PlayerReplay(Base):
-    __tablename__ = "player_replay"
-    replay_id: Mapped[str] = mapped_column(ForeignKey('replay.replay_id'), primary_key=True)
-    replay = relationship("Replay")
-
-    account_id: Mapped[str] = mapped_column(ForeignKey('account.account_id'), primary_key=True)
-    account = relationship("Account")
-
-    nickname: Mapped[str] = mapped_column()
-
-    country: Mapped[Optional[str]] = mapped_column(default=None, nullable=True)
-    clan: Mapped[str] = mapped_column(default=None, nullable=True)
-
-    rating_mean: Mapped[float]
-    rating_stddev: Mapped[float]
-    rating: Mapped[float]
-
-    team: Mapped[int]
-    faction: Mapped[int]
 
 
 class ReplayDownload(Base):

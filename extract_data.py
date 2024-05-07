@@ -11,33 +11,6 @@ from src.storage import has_metadata, get_metadata, write_metadata, list_replays
 METADATA_VERSION = 1
 
 
-@dataclass
-class ReplayPlayerMetadata:
-    player_id: str
-    nickname: str
-    clan: str
-    country: str
-
-    rating_mean: float
-    rating_std: float
-    rating: float
-
-    faction: int
-    team: int
-
-
-@dataclass
-class ReplayMetadata:
-    title: str
-    replay_id: str
-
-    launched_at_ts: int
-    duration: float
-    map: str
-    type: str
-    players: list[ReplayPlayerMetadata]
-
-
 def ensure_str(str_or_bytes: str | bytes):
     if isinstance(str_or_bytes, bytes):
         try:
@@ -45,39 +18,6 @@ def ensure_str(str_or_bytes: str | bytes):
         except UnicodeDecodeError:
             return ""
     return str_or_bytes
-
-
-def make_metadata(replay_id: str, replay: ParsedReplayData):
-    launched_at = replay.header["launched_at"]
-    title = replay.header["title"]
-    game_type = ensure_str(replay.header["game_type"])
-    map_file = ensure_str(replay.header["map_file"])
-    players = []
-    for army_id, player in replay.header["armies"].items():
-        if not player["Human"]:
-            continue
-        nickname = ensure_str(player["PlayerName"])
-        clan = player.get("PlayerClan")
-        players.append(ReplayPlayerMetadata(
-            nickname=nickname,
-            player_id=ensure_str(player["OwnerID"]),
-            country=ensure_str(player.get("Country")),
-            faction=int(player["Faction"]),
-            rating_mean=player["MEAN"],
-            rating_std=player["DEV"],
-            clan=ensure_str(clan if clan else ""),
-            team=int(player["Team"]),
-            rating=replay.header["scenario"]["Options"]["Ratings"][nickname],
-        ))
-    return ReplayMetadata(
-        title=title,
-        replay_id=replay_id,
-        launched_at_ts=launched_at,
-        duration=replay.duration,
-        map=map_file,
-        players=players,
-        type=game_type
-    )
 
 
 def extract_data(replay_id: str):
