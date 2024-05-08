@@ -12,9 +12,14 @@ REPLAY_URL_BASE = "https://replay.faforever.com/"
 
 
 def _load_replay(url: str):
-    response = requests.get(url)
+    try:
+        response = requests.get(url)
+    except requests.exceptions.SSLError:
+        logging.warning("SSL error occurred")
+        return None
     if response.status_code == 200:
         return response.content
+    logging.info(f"\tReceived response {response.status_code}")
     return None
 
 
@@ -34,6 +39,7 @@ def download_replays(from_id: int, to_id: int, refresh: bool = False):
             write_replay(str(replay_id), data)
             logging.info(f"\tdone!")
         else:
+            write_replay(str(replay_id), b'')
             logging.info(f"\treplay not found!")
 
 

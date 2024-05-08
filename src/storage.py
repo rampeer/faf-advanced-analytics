@@ -41,6 +41,7 @@ def write_replay(replay_id, data):
 def write_metadata(replay_id, obj, version):
     metadata[replay_id] = obj
     metadata[replay_id + METADATA_VERSION_SUFFIX] = version
+    metadata.sync()
 
 
 def has_metadata(replay_id, version):
