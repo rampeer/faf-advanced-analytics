@@ -1,7 +1,6 @@
-import base64
 import json
-import zlib
 from dataclasses import dataclass
+from typing import Union
 
 import zstandard
 from datetime import timedelta
@@ -20,6 +19,10 @@ all_commands = [commands.Advance, commands.SetCommandSource, commands.CommandSou
                 commands.DebugCommand,
                 commands.ExecuteLuaInSim, commands.LuaSimCallback,
                 commands.EndGame]
+
+MSG_TICK_TIMEOUT = 20  # for deduplication
+MSG_DONE_SUFFIX = "done!"
+MSG_DONE_SUFFIX2 = "construction done!"
 
 
 class MessageTypes:
@@ -52,9 +55,97 @@ class ResourceSent:
     sent_at_sec: float
 
 
-MSG_TICK_TIMEOUT = 20  # for deduplication
-MSG_DONE_SUFFIX = "done!"
-MSG_DONE_SUFFIX2 = "construction done!"
+@dataclass
+class ReplayPlayerMetadata:
+    player_id: str
+    nickname: str
+    clan: str
+    country: str
+
+    rating_mean: float
+    rating_std: float
+    rating: float
+
+    faction: int
+    team: int
+
+
+@dataclass
+class ReplayMetadata:
+    title: str
+    replay_id: str
+
+    chat_messages: list[ChatMessage]
+    notifications: list[CompletionNotification]
+    resource_transfer: list[ResourceSent]
+
+    launched_at_ts: int
+    duration: float
+    map: str
+
+    game_type: str
+    desync: bool
+    players: list[ReplayPlayerMetadata]
+
+
+def ensure_str(str_or_bytes: Union[str, bytes]):
+    if isinstance(str_or_bytes, bytes):
+        try:
+            return str_or_bytes.decode()
+        except UnicodeDecodeError:
+            return ""
+    return str_or_bytes
+
+
+# Based on `fafreplay`'s extract_scfa function
+def extract_scfa(fobj):
+    """Turns data from `.fafreplay` format into `.scfareplay` format."""
+    header = json.loads(fobj.readline().decode())
+    buf = fobj.read()
+    compression_type = header.get("compression")
+
+    if compression_type == "zlib":
+        raise Exception("Cannot decode zstd compression type, as they lack header")
+        # decoded = base64.decodebytes(buf)
+        # decoded = decoded[4:]  # skip the decoded size
+        # if return_file_header:
+        #     return zlib.decompress(decoded), None
+        # else:
+        #     return zlib.decompress(decoded)
+    elif compression_type == "zstd":
+        if zstandard is None:
+            raise RuntimeError(
+                "zstd is required for decompressing this replay"
+            )
+        reader = zstandard.ZstdDecompressor().stream_reader(buf)
+        data = reader.read()
+        return data, header
+
+
+def _replay_header_parser(game_header: dict, file_header: dict):
+    launched_at = file_header["launched_at"]
+    title = file_header["title"]
+    game_type = ensure_str(file_header["game_type"])
+    map_file = ensure_str(game_header["map_file"])
+    map_file = map_file.strip("/")[-1]
+    players = []
+    for army_id, player in game_header["armies"].items():
+        if not player["Human"]:
+            continue
+        nickname = ensure_str(player["PlayerName"])
+        clan = player.get("PlayerClan")
+        players.append(ReplayPlayerMetadata(
+            nickname=nickname,
+            player_id=ensure_str(player["OwnerID"]),
+            country=ensure_str(player.get("Country")),
+            faction=int(player["Faction"]),
+            rating_mean=player["MEAN"],
+            rating_std=player["DEV"],
+            clan=ensure_str(clan if clan else ""),
+            team=int(player["Team"]),
+            rating=game_header["scenario"]["Options"]["Ratings"][nickname],
+        ))
+    return title, launched_at, map_file, players, game_type
 
 
 def _replay_body_parser(replay):
@@ -113,48 +204,7 @@ def _replay_body_parser(replay):
     return chat_messages, notifications, resource_transfer, current_time.seconds
 
 
-@dataclass
-class ParsedReplayData:
-    header: dict
-    chat_messages: list[ChatMessage]
-    notifications: list[CompletionNotification]
-    duration: float
-    desync: bool
-
-
-def extract_scfa(fobj, return_file_header: bool = False):
-    """extract_scfa(fobj: io.BytesIO) -> bytes
-
-    Turns data from `.fafreplay` format into `.scfareplay` format. The zstd
-    library needs to be installed in order to decode version 2 of the
-    `.fafreplay` format.
-    """
-    header = json.loads(fobj.readline().decode())
-    buf = fobj.read()
-    compression_type = header.get("compression")
-
-    if compression_type == "zlib":
-        raise Exception("Cannot decode  zstd compression type")
-        # decoded = base64.decodebytes(buf)
-        # decoded = decoded[4:]  # skip the decoded size
-        # if return_file_header:
-        #     return zlib.decompress(decoded), None
-        # else:
-        #     return zlib.decompress(decoded)
-    elif compression_type == "zstd":
-        if zstandard is None:
-            raise RuntimeError(
-                "zstd is required for decompressing this replay"
-            )
-        reader = zstandard.ZstdDecompressor().stream_reader(buf)
-        data = reader.read()
-        if return_file_header:
-            return data, header
-        else:
-            return data
-
-
-def parse_replay(data_stream, compressed: bool = True):
+def parse_replay(data_stream, replay_id: str):
     parser = Parser(
         commands=all_commands,
         save_commands=True,
@@ -162,20 +212,26 @@ def parse_replay(data_stream, compressed: bool = True):
         stop_on_desync=False
     )
 
-    if compressed:
-        data, file_header = extract_scfa(data_stream, return_file_header=True)
-    else:
-        raise Exception("Unsupported compression format")
-
+    data, file_header = extract_scfa(data_stream)
     replay = parser.parse(data)
     desync = bool(replay["body"]["sim"]["desync_ticks"])
     chat_messages, notifications, resource_transfer, duration = _replay_body_parser(replay)
-    return ParsedReplayData(
-        header=replay["header"] | file_header,
+    title, launched_at, map_file, players, game_type = _replay_header_parser(
+        game_header=replay["header"],
+        file_header=file_header
+    )
+    return ReplayMetadata(
+        title=title,
         chat_messages=chat_messages,
         notifications=notifications,
         duration=duration,
-        desync=desync
+        desync=desync,
+        players=players,
+        game_type=game_type,
+        replay_id=replay_id,
+        resource_transfer=resource_transfer,
+        launched_at_ts=launched_at,
+        map=map_file
     )
 
 
@@ -184,5 +240,5 @@ if __name__ == "__main__":
     f2 = "21708990.fafreplay"
     f3 = "21708992.fafreplay"
     with open(f"../data/replays/{f1}", "rb") as f:
-        data = parse_replay(f)
-    print(data)
+        metadata = parse_replay(f, f1)
+    print(metadata)
